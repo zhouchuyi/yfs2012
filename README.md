@@ -1055,4 +1055,11 @@ A2 must remember v_a/n_a across reboot! on disk
  ##简介
  本次需要实现**锁服务**的fault tolerance. 具体时现在采用RSM(Replicated State Machine)来实现. 
  要找工作没时间写文档了～有时间在写吧. Paxos和RSM真是...难写难调啊。
- 
+
+ ##问题
+如果primary failure 那么会出现如下问题
+the caching lock client should handle failures of the primary lock server. The reason is that once a primary fails, the client has no idea whether its outstanding RPC requests are processed bythe new primary or not.
+
+The challenge of dealing with primary failure is handling duplicated requests. Consider what happens if the primary crashes while some replicas have executed the request and others have not. A view change will occur, and the client will re-send the request in the new view. If the new primary has already executed the request, the RPC handler in lock_server_cache_rsm will be invoked twice. A good way to handle these cases is to assign sequence numbers to all requests
+
+实验指导中说要给每个客户端请求编号，表示没看懂～
