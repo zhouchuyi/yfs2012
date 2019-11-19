@@ -206,7 +206,6 @@ simple_tests(rpcc *c)
 	VERIFY(rep.size() == 70000);
 	printf("   -- small request, big reply .. ok\n");
 
-#if 0
 	// too few arguments
 	intret = c->call(22, (std::string)"just one", rep);
 	VERIFY(intret < 0);
@@ -222,7 +221,6 @@ simple_tests(rpcc *c)
 	intret = c->call(23, (std::string)"hello", (std::string)" goodbye", wrongrep);
 	VERIFY(intret < 0);
 	printf("   -- wrong ret value size .. failed ok\n");
-#endif
 
 	// specify a timeout value to an RPC that should succeed (udp)
 	int xx = 0;
@@ -272,7 +270,7 @@ concurrent_test(int nt)
 
 	pthread_t th[nt];
 	for(int i = 0; i < nt; i++){
-		ret = pthread_create(&th[i], &attr, client1, (void *) (uintptr_t)i);
+		ret = pthread_create(&th[i], &attr, client1, (void *) i);
 		VERIFY(ret == 0);
 	}
 
@@ -304,7 +302,7 @@ lossy_test()
 	int nt = 1;
 	pthread_t th[nt];
 	for(int i = 0; i < nt; i++){
-		ret = pthread_create(&th[i], &attr, client2, (void *) (uintptr_t)i);
+		ret = pthread_create(&th[i], &attr, client2, (void *) i);
 		VERIFY(ret == 0);
 	}
 	for(int i = 0; i < nt; i++){

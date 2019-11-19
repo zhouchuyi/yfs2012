@@ -64,13 +64,13 @@
 #include "method_thread.h"
 #include "slock.h"
 
+#include <algorithm>
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <time.h>
 #include <netdb.h>
 #include <unistd.h>
-
 #include "jsl_log.h"
 #include "gettime.h"
 #include "lang/verify.h"
@@ -106,6 +106,7 @@ rpcc::rpcc(sockaddr_in d, bool retrans) :
 	VERIFY(pthread_mutex_init(&m_, 0) == 0);
 	VERIFY(pthread_mutex_init(&chan_m_, 0) == 0);
 	VERIFY(pthread_cond_init(&destroy_wait_c_, 0) == 0);
+
 	if(retrans){
 		set_rand_seed();
 		clt_nonce_ = random();
@@ -189,6 +190,7 @@ int
 rpcc::call1(unsigned int proc, marshall &req, unmarshall &rep,
 		TO to)
 {
+
 	caller ca(0, &rep);
         int xid_rep;
 	{
@@ -212,6 +214,7 @@ rpcc::call1(unsigned int proc, marshall &req, unmarshall &rep,
 		req.pack_req_header(h);
                 xid_rep = xid_rep_window_.front();
 	}
+
 	TO curr_to;
 	struct timespec now, nextdeadline, finaldeadline; 
 
@@ -222,7 +225,7 @@ rpcc::call1(unsigned int proc, marshall &req, unmarshall &rep,
 	bool transmit = true;
 	connection *ch = NULL;
 
-	while (1) {
+	while (1){
 		if(transmit){
 			get_refconn(&ch);
 			if(ch){
@@ -587,14 +590,14 @@ rpcs::dispatch(djob_t *j)
 			}
 
 			rh.ret = f->fn(req, rep);
-                        if (rh.ret == rpc_const::unmarshal_args_failure) {
-                                fprintf(stderr, "rpcs::dispatch: failed to"
-                                       " unmarshall the arguments. You are"
-                                       " probably calling RPC 0x%x with wrong"
-                                       " types of arguments.\n", proc);
-                                VERIFY(0);
-                        }
-			VERIFY(rh.ret >= 0);
+                        // if (rh.ret == rpc_const::unmarshal_args_failure) {
+                        //         fprintf(stderr, "rpcs::dispatch: failed to"
+                        //                " unmarshall the arguments. You are"
+                        //                " probably calling RPC 0x%x with wrong"
+                        //                " types of arguments.\n", proc);
+                        //         VERIFY(0);
+                        // }
+			// VERIFY(rh.ret >= 0);
 
 			rep.pack_reply_header(rh);
 			rep.take_buf(&b1,&sz1);
@@ -641,14 +644,8 @@ rpcs::dispatch(djob_t *j)
 }
 
 // rpcs::dispatch calls this when an RPC request arrives.
-//
 // checks to see if an RPC with xid from clt_nonce has already been received.
-// if not, remembers the request in reply_window_.
-//
-// deletes remembered requests with XIDs <= xid_rep; the client
-// says it has received a reply for every RPC up through xid_rep.
-// frees the reply_t::buf of each such request.
-//
+// if not, remembers the request.
 // returns one of:
 //   NEW: never seen this xid before.
 //   INPROGRESS: seen this xid, and still processing it.
@@ -658,42 +655,42 @@ rpcs::rpcstate_t
 rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 		unsigned int xid_rep, char **b, int *sz)
 {
-	
 	ScopedLock rwl(&reply_window_m_);
-	std::list<reply_t>::iterator iter;
+	static std::map<unsigned int,unsigned int> latestRepMap;
+	std::list<reply_t>* window = &reply_window_[clt_nonce];
+	reply_t newReply(xid);
+	if(latestRepMap[clt_nonce] > xid)
+		return FORGOTTEN;
+	auto trim = std::find_if(window->begin(),window->end(),[&](const reply_t& rep){ return rep.xid == xid_rep; });
 	
-	for (iter = reply_window_[clt_nonce].begin(); iter != reply_window_[clt_nonce].end(); ) {
-		if (iter->xid < xid_rep && iter->cb_present) {
-			free(iter->buf);
-			iter = reply_window_[clt_nonce].erase(iter);
-			continue;
-		}	
-		if (xid == iter->xid) {
-			if(iter->cb_present) {
-				*b = iter->buf;
-				*sz = iter->sz;
-				return DONE;
-			} else {
-				return INPROGRESS;
-			}
-		} 	
-		if(reply_window_[clt_nonce].front().xid > xid) 
-			return FORGOTTEN;
-		iter++;
+	if(trim != window->end())
+	{
+		for (auto it = window->begin(); it != trim; it++)
+		{
+			free(it->buf);
+			it->cb_present = false;
+		}
+		window->erase(window->begin(),trim);
 	}
-		
-	reply_t reply(xid);
-	for (iter = reply_window_[clt_nonce].begin(); iter != reply_window_[clt_nonce].end(); iter++) {
-		if(iter->xid > xid) {
-			reply_window_[clt_nonce].insert(iter, reply);
-			break;
-		}		
+	latestRepMap[clt_nonce] = xid_rep;
+	auto repforward = std::find_if(window->begin(),window->end(),[&](const reply_t& rep){ return rep.xid == xid; });
+	if(repforward != window->end())
+	{
+		if(repforward->cb_present)
+		{
+			*b = repforward->buf;
+			*sz = repforward->sz;
+			return DONE;
+		}
+		else
+			return INPROGRESS;
 	}
-	if(iter == reply_window_[clt_nonce].end())
-		reply_window_[clt_nonce].push_back(reply);
+    window->push_back(newReply);
+	window->sort([](const reply_t& rep1,const reply_t& rep2){ return rep1.xid <= rep2.xid; });
 	return NEW;
 	
         // You fill this in for Lab 1.
+
 }
 
 // rpcs::dispatch calls add_reply when it is sending a reply to an RPC,
@@ -706,19 +703,13 @@ rpcs::add_reply(unsigned int clt_nonce, unsigned int xid,
 		char *b, int sz)
 {
 	ScopedLock rwl(&reply_window_m_);
-	std::map<unsigned int, std::list<reply_t> >::iterator clt;
-	std::list<reply_t>::iterator iter;
-	clt = reply_window_.find(clt_nonce);
-	if (clt != reply_window_.end()) {
-		for (iter = clt->second.begin(); iter != clt->second.end(); iter++) { 
-			if (iter->xid == xid) {
-				iter->buf = b;
-				iter->sz = sz;
-				iter->cb_present = true;
-				break; 
-			}
-		}
-	}
+	std::list<reply_t>* window = &reply_window_[clt_nonce];
+	auto it = std::find_if(window->begin(),window->end(),[&](const reply_t& rep)
+															{ return rep.xid == xid;});
+    assert(it != window->end());
+	it->cb_present = true;
+	it->sz = sz;
+	it->buf = b;
         // You fill this in for Lab 1.
 }
 

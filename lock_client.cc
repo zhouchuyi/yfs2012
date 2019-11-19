@@ -9,6 +9,9 @@
 #include <stdio.h>
 
 lock_client::lock_client(std::string dst)
+ : cl(nullptr),
+   mutex_(),
+   locks_()
 {
   sockaddr_in dstsock;
   make_sockaddr(dst.c_str(), &dstsock);
@@ -22,7 +25,7 @@ int
 lock_client::stat(lock_protocol::lockid_t lid)
 {
   int r;
-  lock_protocol::status ret = cl->call(lock_protocol::stat, cl->id(), lid, r);
+  int ret = cl->call(lock_protocol::stat, cl->id(), lid, r);
   VERIFY (ret == lock_protocol::OK);
   return r;
 }
@@ -30,18 +33,27 @@ lock_client::stat(lock_protocol::lockid_t lid)
 lock_protocol::status
 lock_client::acquire(lock_protocol::lockid_t lid)
 {
-	int r;
-	lock_protocol::status ret = cl->call(lock_protocol::acquire, cl->id(), lid, r);
-	VERIFY(ret == lock_protocol::OK);
-	return r;
+  std::unique_lock<std::mutex> lk(mutex_);
+  auto it = locks_.find(lid);
+  if(it == locks_.end())
+  {
+    locks_[lid].state_ = FREE;
+  }
+  locks_[lid].cond_.wait(lk,[&](){ return locks_[lid].state_ == FREE; });    
+  int r;
+  int ret = cl->call(lock_protocol::acquire, cl->id(), lid, r);
+  locks_[lid].state_ = LOCKED;
+  return ret;
 }
 
 lock_protocol::status
 lock_client::release(lock_protocol::lockid_t lid)
 {
-	int r;
-	lock_protocol::status ret = cl->call(lock_protocol::release, cl->id(), lid, r);
-	VERIFY(ret == lock_protocol::OK);
-	return r;
+    std::unique_lock<std::mutex> lk(mutex_);
+    int r;
+    int ret = cl->call(lock_protocol::release, cl->id(), lid, r);
+    locks_[lid].state_ = FREE;
+    locks_[lid].cond_.notify_one();
+    return ret;
 }
 

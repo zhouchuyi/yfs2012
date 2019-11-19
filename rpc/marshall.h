@@ -8,8 +8,6 @@
 #include <map>
 #include <stdlib.h>
 #include <string.h>
-#include <cstddef>
-#include <inttypes.h>
 #include "lang/verify.h"
 #include "lang/algorithm.h"
 
@@ -220,7 +218,6 @@ operator<<(marshall &m, std::vector<C> v)
 template <class C> unmarshall &
 operator>>(unmarshall &u, std::vector<C> &v)
 {
-        v.clear();
 	unsigned n;
 	u >> n;
 	for(unsigned i = 0; i < n; i++){
