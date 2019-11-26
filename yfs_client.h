@@ -5,10 +5,13 @@
 //#include "yfs_protocol.h"
 #include "extent_client.h"
 #include <vector>
-
+#include <map>
+#include "lock_protocol.h"
+#include "lock_client.h"
 
 class yfs_client {
   extent_client *ec;
+  lock_client* lc;
  public:
 
   typedef unsigned long long inum;
@@ -32,6 +35,9 @@ class yfs_client {
   };
 
  private:
+  int readdirunlocked(inum, std::list<dirent> &);
+  std::map<inum,lock_protocol::lockid_t> locks;
+  // std::set<lock_protocol::lockid_t> locks;
   static std::string filename(inum);
   static inum n2i(std::string);
  public:
@@ -43,20 +49,15 @@ class yfs_client {
 
   int getfile(inum, fileinfo &);
   int getdir(inum, dirinfo &);
-
-  int setfile(inum, fileinfo&);
-  int setdir(inum, dirinfo&);
-
-  int readfile(inum, size_t, off_t, std::string&);
-
-  int readDir(inum,std::map<extent_protocol::extentid_t, 
-                                std::string>& contents);
-  
-  int writefile(inum, size_t, off_t, std::string&);
- 
-  int create(inum parent, inum child, std::string name);
-  int lookup(inum parent, std::string name,inum& child);
-
+  int setattr(inum, struct stat *);
+  int read(inum, off_t, size_t, std::string &);
+  int write(inum, off_t, size_t, const char *);
+  inum random_inum(bool);
+  int create(inum, const char *, inum &);
+  int lookup(inum, const char *, inum &, bool *);
+  int readdir(inum, std::list<dirent> &);
+  int mkdir(inum,const char*,inum&);
+  int unlink(inum,const char*);
 };
 
 #endif 

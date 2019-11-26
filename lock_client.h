@@ -24,11 +24,18 @@ class lock_client {
   std::mutex mutex_;
   std::map<lock_protocol::lockid_t,lock> locks_;
  public:
-  lock_client(std::string d);
-  virtual ~lock_client() {};
-  virtual lock_protocol::status acquire(lock_protocol::lockid_t);
-  virtual lock_protocol::status release(lock_protocol::lockid_t);
-  virtual lock_protocol::status stat(lock_protocol::lockid_t);
+  lock_client(std::string d); 
+
+
+  ~lock_client() {};
+
+  virtual lock_protocol::status acquire(lock_protocol::lockid_t lid);
+
+  virtual lock_protocol::status release(lock_protocol::lockid_t lid);
+
+  virtual lock_protocol::status stat(lock_protocol::lockid_t lid);
+
+
 };
 
 

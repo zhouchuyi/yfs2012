@@ -14,13 +14,7 @@ class extent_protocol {
     put = 0x6001,
     get,
     getattr,
-    setattr,
-    remove,
-    read,
-    write,
-    create,
-    lookup,
-    readDir
+    remove
   };
 
   struct attr {
