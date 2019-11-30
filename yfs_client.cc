@@ -2,6 +2,7 @@
 #include "yfs_client.h"
 #include "extent_client.h"
 #include "lock_client.h"
+#include "lock_client_cache.h"
 #include <sstream>
 #include <iostream>
 #include <stdio.h>
@@ -15,9 +16,9 @@ static lock_protocol::lockid_t lockId = 0;
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
  : locks()
 {
+  printf("bind %s",lock_dst.c_str());
   ec = new extent_client(extent_dst);
-  lc = new lock_client(lock_dst);
-  locks[0] = lockId++;
+  lc = new lock_client_cache(lock_dst);
 }
 
 yfs_client::inum
@@ -52,7 +53,7 @@ yfs_client::isdir(inum inum)
 }
 
 int
-yfs_client::getfile(inum inum, fileinfo &fin)
+yfs_client::getfile(inum inum, fileinfo& fin)
 {
   int r = OK;
   // You modify this function for Lab 3
@@ -245,7 +246,7 @@ release:
 }
 
 int 
-yfs_client::readdir(inum inum, std::list<dirent> &dirents) 
+yfs_client::readdir(inum inum, std::list<dirent>& dirents) 
 {
 	// if(locks.find(inum) == locks.end())
 	// 	return IOERR;
@@ -296,6 +297,7 @@ yfs_client::mkdir(inum parent,const char* name,inum& id)
 	int r = OK;
 	std::string dir_data;
 	std::string dir_name;
+	printf("makdir begin get lock\n");
 	lc->acquire(parent);
 	if(ec->get(parent,dir_data) != extent_protocol::OK)
 	{
@@ -320,6 +322,7 @@ yfs_client::mkdir(inum parent,const char* name,inum& id)
 		r = IOERR;
 	}
 release:
+	printf("makdir begin release lock\n");
 	lc->release(parent);
 	return r;
 
@@ -360,11 +363,6 @@ yfs_client::unlink(inum parent,const char* name)
 		std::string file_name = "/" + std::string(entry.name) + "/";
 		dir_data.append(file_name + filename(entry.inum) + "/");	
 	}
-	// if(locks.find(id) == locks.end())
-	// {
-	// 	r = IOERR;
-	// 	goto release;
-	// }
 	lc->acquire(id);
 	ec->remove(id);
 	lc->release(id);
