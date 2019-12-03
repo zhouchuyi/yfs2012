@@ -18,7 +18,7 @@ yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
   printf("bind %s",lock_dst.c_str());
   ec = new extent_client(extent_dst);
-  lc = new lock_client_cache(lock_dst);
+  lc = new lock_client_cache(lock_dst,new lock_release_client(ec));
 }
 
 yfs_client::inum
@@ -195,11 +195,13 @@ yfs_client::create(inum parent, const char *name, inum &inum)
 	}
 
 	inum = random_inum(true);
+	lc->acquire(inum);
 	if (ec->put(inum, std::string()) != extent_protocol::OK) {
 		r = IOERR;
 		goto release;
 	}
-//	unsigned long ino = (unsigned long) inum;
+	lc->release(inum);
+
 	dir_data.append(file_name + filename(inum) + "/");
 	if (ec->put(parent, dir_data) != extent_protocol::OK) {
 		r = IOERR;
@@ -311,11 +313,13 @@ yfs_client::mkdir(inum parent,const char* name,inum& id)
 		goto release;
 	}
 	id = random_inum(false);
+	// lc->acquire(id);
 	if(ec->put(id,std::string{}) != extent_protocol::OK)
 	{
 		r = IOERR;
 		goto release;
 	}
+	// lc->release(id);
 	dir_data.append(dir_name + filename(id) + '/');
 	if(ec->put(parent,dir_data) != extent_protocol::OK)
 	{
@@ -363,9 +367,9 @@ yfs_client::unlink(inum parent,const char* name)
 		std::string file_name = "/" + std::string(entry.name) + "/";
 		dir_data.append(file_name + filename(entry.inum) + "/");	
 	}
-	lc->acquire(id);
+	// lc->acquire(id);
 	ec->remove(id);
-	lc->release(id);
+	// lc->release(id);
 	if(ec->put(parent,dir_data) != extent_protocol::OK)
 	{
 		r = IOERR;

@@ -82,7 +82,9 @@ retry:    //receive RETRY
     {
       assert(it->second.cachestate_ == CacheState::RELEASING);
       tprintf("client %s releasing wait \n",id.c_str());
-      it->second.cond_.wait(lk,[&](){ return lockInfos_[lid].cachestate_ == CacheState::NONE; });
+      it->second.threadWaiterNum_++;
+      it->second.cond_.wait(lk,[&](){ return lockInfos_[lid].cachestate_ != CacheState::RELEASING; });
+      it->second.threadWaiterNum_--;
       lk.unlock();
       return acquire(lid);
     }
@@ -114,12 +116,13 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
   if(it->second.retryR_)
   {
     it->second.cachestate_ = CacheState::RELEASING;
-    lk.unlock();
+    // lk.unlock();
     tprintf("client %s releasing... %lld \n",id.c_str(),lid);
+    lu->dorelease(lid);
     ret = cl->call(lock_protocol::release,lid,id,r);
     assert(ret == lock_protocol::OK);
     {
-      lk.lock();
+      // lk.lock();
       it = lockInfos_.find(lid);
       it->second.cachestate_ = CacheState::NONE;
       it->second.retryR_ = 0;
@@ -148,10 +151,14 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
                                           && lockInfos_[lid].threadOwner_ != 0; });    
 
   tprintf("client %s revoke finish %lld \n",id.c_str(),lid);
-  it->second.cachestate_ = CacheState::NONE;
+  it->second.cachestate_ = CacheState::RELEASING;
   it->second.isRevoked = false;
   it->second.retryR_ = 0;
-  lk.unlock();
+  // lk.unlock();
+  lu->dorelease(lid);
+  // lk.lock();
+  lockInfos_[lid].cachestate_ = CacheState::NONE;
+  lockInfos_[lid].cond_.notify_one();
   return lock_protocol::OK;
 }
 
